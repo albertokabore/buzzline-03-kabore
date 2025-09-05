@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 from utils.utils_consumer import create_kafka_consumer
 from utils.utils_logger import logger
 
-# Load environment variables
+# Load environment
 load_dotenv()
 
 #####################################
@@ -42,6 +42,7 @@ def get_kafka_consumer_group_id() -> str:
 
 def get_stall_threshold() -> float:
     """Fetch stall threshold in Fahrenheit or use default."""
+    # Use two degrees by default which matches the project notes
     temp_variation = float(os.getenv("SMOKER_STALL_THRESHOLD_F", 2.0))
     logger.info(f"Max stall temperature range: {temp_variation} F")
     return temp_variation
@@ -60,10 +61,8 @@ def get_rolling_window_size() -> int:
 
 def detect_stall(rolling_window_deque: deque) -> bool:
     """
-    Detect a temperature stall based on the rolling window.
-
-    Returns True when the range across the window is less than or equal
-    to the configured threshold.
+    Return True when the temperature range over the window
+    is less than or equal to the threshold.
     """
     window_size: int = get_rolling_window_size()
     if len(rolling_window_deque) < window_size:
@@ -84,9 +83,7 @@ def detect_stall(rolling_window_deque: deque) -> bool:
 
 def process_message(message: str, rolling_window: deque, window_size: int) -> None:
     """
-    Process a JSON encoded message and check for stalls.
-
-    message is expected to be a JSON string with keys timestamp and temperature.
+    Parse a JSON message and update stall status.
     """
     try:
         logger.debug(f"Raw message: {message}")
@@ -100,6 +97,7 @@ def process_message(message: str, rolling_window: deque, window_size: int) -> No
             logger.error(f"Invalid message format: {message}")
             return
 
+        # Ensure numeric type for proper range math
         try:
             temperature = float(temperature)
         except Exception as e:
@@ -140,9 +138,11 @@ def main() -> None:
 
     logger.info(f"Polling messages from topic '{topic}'")
     try:
-        for message in consumer:
-            message_str = message.value
-            logger.debug(f"Received message at offset {message.offset}: {message_str}")
+        for record in consumer:
+            # utils may already decode to str, but handle bytes just in case
+            raw_value = record.value
+            message_str = raw_value.decode("utf-8") if isinstance(raw_value, (bytes, bytearray)) else raw_value
+            logger.debug(f"Received message at offset {record.offset}: {message_str}")
             process_message(message_str, rolling_window, window_size)
     except KeyboardInterrupt:
         logger.warning("Consumer interrupted by user.")
